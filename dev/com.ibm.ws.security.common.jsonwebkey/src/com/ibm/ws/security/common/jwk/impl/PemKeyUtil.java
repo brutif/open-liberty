@@ -18,8 +18,10 @@ public class PemKeyUtil {
     OQIDAQAB
     -----END PUBLIC KEY-----
      */
-    protected final static String BEGIN = "-----BEGIN (.*)-----";
-    protected final static String END = "-----END (.*)-----";
+    //protected final static String BEGIN = "-----BEGIN (.*)-----";
+    //protected final static String END = "-----END (.*)-----";
+    protected final static String BEGIN = "-----BEGIN .*?-----";
+    protected final static String END = "-----END .*?-----";
     protected final static String LINE_SEPARATOR_UNIX = "\n";
     protected final static String LINE_SEPARATOR_MAC = "\r";
     protected final static String LINE_SEPARATOR_WINDOW = "\r\n";

@@ -33,7 +33,7 @@ public class JWKSet {
     }
 
     public List<JWK> getJWKs() {
-        return jwks;
+        return null;// jwks;
     }
 
     public synchronized void addJWK(JWK jwk) {
@@ -63,10 +63,10 @@ public class JWKSet {
             if (jwks.size() == 1) {
                 return jwks.get(0);
             } else {
-                return null;
+                return null;                
             }
-        }
-
+        }         
+        
         Iterator<JWK> it = jwks.iterator();
         JSONWebKey jwk = null;
         while (it.hasNext()) {
@@ -76,7 +76,8 @@ public class JWKSet {
             }
         }
 
-        return null;
+        //return null;
+        return getPEMKey(); // temporary
     }
 
     public PublicKey getPublicKeyByKid(String id) {
@@ -121,4 +122,21 @@ public class JWKSet {
     public void add(int i, JWK jwk) {
         jwks.add(i, jwk);
     }
+    
+    // the code below here is temporary until cache enhancements for mpjwt-1.1 can be completed.
+    JWK theOnePEMJwk = null;
+    public void add(JWK jwk, boolean isFromPEM){
+        jwks.add(jwk);
+        if(isFromPEM){
+            theOnePEMJwk = jwk;
+        }
+    }
+    
+    protected JWK getPEMKey(){
+        if ( theOnePEMJwk != null ){
+            return theOnePEMJwk;
+        }
+        return null;
+    }
+    // end temporary code.
 }
