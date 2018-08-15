@@ -1,12 +1,12 @@
 /*******************************************************************************
- * Copyright (c) 2016 IBM Corporation and others.
+ * Copyright (c) 2016, 2018 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/legal/epl-v10.html
  *
  * Contributors:
- *     IBM Corporation - initial API and implementation
+ * IBM Corporation - initial API and implementation
  *******************************************************************************/
 package com.ibm.ws.security.common.jwk.impl;
 
@@ -17,6 +17,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
+import java.net.URL;
 import java.security.AccessController;
 import java.security.KeyStoreException;
 import java.security.PrivilegedActionException;
@@ -27,7 +28,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-//import java.util.Base64;  // or could use 
+// import java.util.Base64; // or could use
 import org.apache.commons.codec.binary.Base64;
 
 import javax.net.ssl.SSLSocketFactory;
@@ -64,137 +65,141 @@ import com.ibm.wsspi.ssl.SSLSupport;
  *
  */
 public class JwKRetriever {
-	private static final TraceComponent tc = Tr.register(JwKRetriever.class);
+    private static final TraceComponent tc = Tr.register(JwKRetriever.class);
 
     final static String PEM_BEGIN_TOKEN = "-----BEGIN";
     final static String PEM_END_TOKEN = "--END--";
     final static String JWKS = "keys";
     final static String JSON_START = "{";
-	
-	String configId = null;
-	String sslConfigurationName = null;
-	String jwkEndpointUrl = null; // jwksUri
 
-	String sigAlg = "RS256"; // TODO may need to allow it to be set in
-								// configuration
-	JWKSet jwkSet = null; // using the JWKSet from the JwtConsumerConfig. Do not
-							// create it every time
-	SSLSupport sslSupport = null;//JwtUtils.getSSLSupportService();
+    String configId = null;
+    String sslConfigurationName = null;
+    String jwkEndpointUrl = null; // jwksUri
 
-	String keyFileName = null;
+    String sigAlg = "RS256"; // TODO may need to allow it to be set in
+                             // configuration
+    JWKSet jwkSet = null; // using the JWKSet from the JwtConsumerConfig. Do not
+                          // create it every time
+    SSLSupport sslSupport = null;//JwtUtils.getSSLSupportService();
 
-	boolean hostNameVerificationEnabled = true;
-	
-	String jwkClientId = null;
-	
-	String jwkClientSecret = null;
-	
-	String keyLocation = null;
-	String publicKeyText = null;
+    String keyFileName = null;
 
-	/**
-	 *
-	 * @param configId
-	 *            config ID
-	 * @param sslConfigurationName
-	 *            sslRef
-	 * @param jwkEndpointUrl
-	 *            jwksUri
-	 * @param jwkSet
-	 *            using the jwkSet from the config
-	 * @param hnvEnabled 
-	 */
-	public JwKRetriever(String configId, String sslConfigurationName, String jwkEndpointUrl, JWKSet jwkSet, SSLSupport sslSupport, boolean hnvEnabled, String jwkClientId, @Sensitive String jwkClientSecret) {
-		this.configId = configId;
-		this.sslConfigurationName = sslConfigurationName;
-		this.jwkEndpointUrl = jwkEndpointUrl;
-		this.jwkSet = jwkSet; // get the JWKSet from the Config
-		this.sslSupport = sslSupport;
-		this.hostNameVerificationEnabled = hnvEnabled;
-		this.jwkClientId = jwkClientId;
-		this.jwkClientSecret = jwkClientSecret;
-	}
-	
-	   public JwKRetriever(String configId, String sslConfigurationName, String jwkEndpointUrl, JWKSet jwkSet, SSLSupport sslSupport, boolean hnvEnabled, String jwkClientId, @Sensitive String jwkClientSecret,
-	           String publicKeyText, String keyLocation) {
-	        this.configId = configId;
-	        this.sslConfigurationName = sslConfigurationName;
-	        this.jwkEndpointUrl = jwkEndpointUrl;
-	        this.jwkSet = jwkSet; // get the JWKSet from the Config
-	        this.sslSupport = sslSupport;
-	        this.hostNameVerificationEnabled = hnvEnabled;
-	        this.jwkClientId = jwkClientId;
-	        this.jwkClientSecret = jwkClientSecret;
-	        this.publicKeyText = publicKeyText;
-	        this.keyLocation = keyLocation;
-	    }
+    boolean hostNameVerificationEnabled = true;
 
-//	public JwKRetriever(JwtConsumerConfig config) {
-//		configId = config.getId();
-//		sslConfigurationName = config.getSslRef();
-//		jwkEndpointUrl = config.getJwkEndpointUrl();
-//		jwkSet = config.getJwkSet();
-//		hostNameVerificationEnabled = config.isHostNameVerificationEnabled();
-//		
-//	}
+    String jwkClientId = null;
 
-	/**
-	 * Either kid or x5t will work. But not both
-	 *
-	 * @param kid
-	 * @param x5t
-	 * @return
-	 * @throws PrivilegedActionException
-	 * @throws IOException
-	 * @throws KeyStoreException
-	 * @throws InterruptedException
-	 */
-	@FFDCIgnore({ KeyStoreException.class })
-	public PublicKey getPublicKeyFromJwk(String kid, String x5t)
-			throws PrivilegedActionException, IOException, KeyStoreException, InterruptedException {
-	    // TODO: Lookup by jwksUri, mp.jwt.verify.publickey.location, and mp.jwt.verify.publickey
-		PublicKey key = this.getJwkCache(kid, x5t);
-		KeyStoreException errKeyStoreException = null;
-		InterruptedException errInterruptedException = null;
-		
-		Tr.debug(tc, "TTORRES: getPublicKeyFromJwk", kid, x5t, jwkEndpointUrl, publicKeyText, keyLocation);
-		
-		if (key == null) {
-		    boolean isHttp = remoteHttpCall (this.jwkEndpointUrl, this.publicKeyText, this.keyLocation);
-			try {
-			    if (isHttp) {
-			        key = this.getJwkRemote(kid, x5t);
-			    } else {
-			        key = this.getJwkLocal(kid, x5t, publicKeyText, keyLocation);
-			    }
-			} catch (KeyStoreException e) {
-				errKeyStoreException = e;
-			} catch (InterruptedException e) {
-				errInterruptedException = e;
-			}
-		}
-		if (key == null) {
-			if (errKeyStoreException != null) {
-				throw errKeyStoreException;
-			}
-			if (errInterruptedException != null) {
-				throw errInterruptedException;
-			}
-		}
-		return key;
-	}
+    String jwkClientSecret = null;
 
-	protected PublicKey getJwkCache(String kid, String x5t) {
-		if (kid != null) {
-			return jwkSet.getPublicKeyByKid(kid);
-		} else if (x5t != null) {
-			return jwkSet.getPublicKeyByx5t(x5t);
-		}
-		return jwkSet.getPublicKeyByKid(null);
-	}
-	
+    String keyLocation = null;
+    String publicKeyText = null;
+
+    /**
+     *
+     * @param configId
+     *            config ID
+     * @param sslConfigurationName
+     *            sslRef
+     * @param jwkEndpointUrl
+     *            jwksUri
+     * @param jwkSet
+     *            using the jwkSet from the config
+     * @param hnvEnabled
+     */
+    public JwKRetriever(String configId, String sslConfigurationName, String jwkEndpointUrl, JWKSet jwkSet, SSLSupport sslSupport, boolean hnvEnabled, String jwkClientId, @Sensitive String jwkClientSecret) {
+        this.configId = configId;
+        this.sslConfigurationName = sslConfigurationName;
+        this.jwkEndpointUrl = jwkEndpointUrl;
+        this.jwkSet = jwkSet; // get the JWKSet from the Config
+        this.sslSupport = sslSupport;
+        this.hostNameVerificationEnabled = hnvEnabled;
+        this.jwkClientId = jwkClientId;
+        this.jwkClientSecret = jwkClientSecret;
+    }
+
+    public JwKRetriever(String configId, String sslConfigurationName, String jwkEndpointUrl, JWKSet jwkSet, SSLSupport sslSupport, boolean hnvEnabled, String jwkClientId, @Sensitive String jwkClientSecret,
+            String publicKeyText, String keyLocation) {
+        this.configId = configId;
+        this.sslConfigurationName = sslConfigurationName;
+        this.jwkEndpointUrl = jwkEndpointUrl;
+        this.jwkSet = jwkSet; // get the JWKSet from the Config
+        this.sslSupport = sslSupport;
+        this.hostNameVerificationEnabled = hnvEnabled;
+        this.jwkClientId = jwkClientId;
+        this.jwkClientSecret = jwkClientSecret;
+        this.publicKeyText = publicKeyText;
+        this.keyLocation = keyLocation;
+    }
+
+    //  public JwKRetriever(JwtConsumerConfig config) {
+    //      configId = config.getId();
+    //      sslConfigurationName = config.getSslRef();
+    //      jwkEndpointUrl = config.getJwkEndpointUrl();
+    //      jwkSet = config.getJwkSet();
+    //      hostNameVerificationEnabled = config.isHostNameVerificationEnabled();
+    //      
+    //  }
+
+    /**
+     * Either kid or x5t will work. But not both
+     *
+     * @param kid
+     * @param x5t
+     * @return
+     * @throws PrivilegedActionException
+     * @throws IOException
+     * @throws KeyStoreException
+     * @throws InterruptedException
+     */
+    @FFDCIgnore({ KeyStoreException.class })
+    public PublicKey getPublicKeyFromJwk(String kid, String x5t)
+            throws PrivilegedActionException, IOException, KeyStoreException, InterruptedException {
+        PublicKey key = null;
+        KeyStoreException errKeyStoreException = null;
+        InterruptedException errInterruptedException = null;
+
+        boolean isHttp = remoteHttpCall(this.jwkEndpointUrl, this.publicKeyText, this.keyLocation);
+        try {
+            if (isHttp) {
+                key = this.getJwkRemote(kid, x5t);
+            } else {
+                key = this.getJwkLocal(kid, x5t, publicKeyText, keyLocation);
+            }
+        } catch (KeyStoreException e) {
+            errKeyStoreException = e;
+        } catch (InterruptedException e) {
+            errInterruptedException = e;
+        }
+
+        if (key == null) {
+            if (errKeyStoreException != null) {
+                throw errKeyStoreException;
+            }
+            if (errInterruptedException != null) {
+                throw errInterruptedException;
+            }
+        }
+        return key;
+    }
+
+    protected PublicKey getJwkCache(String kid, String x5t) {
+        if (kid != null) {
+            return jwkSet.getPublicKeyByKid(kid);
+        } else if (x5t != null) {
+            return jwkSet.getPublicKeyByx5t(x5t);
+        }
+        return jwkSet.getPublicKeyByKid(null);
+    }
+
+    private PublicKey getJwkFromJWKSet(String setId, String kid, String x5t) {
+        if (kid != null) {
+            return jwkSet.getPublicKeyBySetIdAndKid(setId, kid);
+        } else if (x5t != null) {
+            return jwkSet.getPublicKeyBySetIdAndx5t(setId, x5t);
+        }
+        return jwkSet.getPublicKeyBySetId(setId);
+    }
+
     protected boolean remoteHttpCall(String jwksUri, String publicKeyText, String keyLocation) {
-        Tr.debug(tc, "TTORRES: remoteHttpCall", jwksUri, publicKeyText, keyLocation);
         boolean isHttp = true;
         if (jwksUri == null) {
             if (publicKeyText != null) {
@@ -203,197 +208,220 @@ public class JwKRetriever {
                 isHttp = false;
             }
         }
-        Tr.debug(tc, "TTORRES: remoteHttpCall", isHttp);
         return isHttp;
     }
 
-	protected String getKeyStringLocal(String location){
-	    Tr.debug(tc, "TTORRES: getKeyStringLocal", location);
-	    String keyString = null;
+    protected PublicKey getPublicKeyFromFile(String location, String kid, String x5t) {
+        PublicKey publicKey = null;
+        String keyString = null;
         InputStream inputStream = null;
-	       try {	           
-	            final String keyFile;
-	            if (location.startsWith("file:")) {
-	                URI uri = new URI(location);
-	                keyFile = uri.getPath();
-	            } else {
-	                keyFile = location;
-	            }
-	            try {
-	             inputStream = (FileInputStream) AccessController
-	                    .doPrivileged(new PrivilegedExceptionAction<Object>() {
-	                        @Override
-	                        public Object run() throws Exception {
-	                            File fileJwk = new File(keyFile);
-	                            if (fileJwk.exists()) {
-	                                return new FileInputStream(fileJwk);
-	                            } else {
-	                                Tr.debug(tc, "TTORRES: getKeyAsString File does not exist", keyFile);
-	                                return null;
-	                            }
-	                        }
-	                    });
-	            } catch (PrivilegedActionException e1){
-	                inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(location);
-	            }
-	            if (inputStream == null) {
-	                inputStream=Thread.currentThread().getContextClassLoader().getResourceAsStream(location);
-	            }
-	            
-	            Tr.debug(tc, "TTORRES: getKeyAsString File input stream", inputStream);
-	            
-	            if (inputStream != null){
-	                keyString= getKeyAsString(inputStream) ;
-	            }
-	       } catch (Exception e2){
-	       }
-	       Tr.debug(tc, "TTORRES: getKeyStringLocal", keyString);
-	       return keyString;	    
-	}
-	
-	protected PublicKey getJwkLocal(String kid, String x5t, String publicKeyText, String location)  {
-	    Tr.debug(tc, "TTORRES: getJwkLocal", kid, x5t, publicKeyText, location);
-		String keyText = publicKeyText;
-		if (keyText == null && location != null){
-		    keyText = getKeyStringLocal (location);
-		}
-	    if (keyText == null) {
-	        return null;
-	    }
-	    
-		parseJwk(keyText, null, jwkSet, sigAlg);
-		
-		return getJwkCache(kid, x5t);
-	}
-	
-	protected String getKeyAsString(InputStream fis) {
-	    Tr.debug(tc, "TTORRES: getKeyAsString", fis);
-	    StringBuilder sb = new StringBuilder();
-	    try {
-    	    InputStreamReader r = new InputStreamReader(fis, "UTF-8");  
-    	    int ch = r.read();
-    	    while(ch >= 0) {
-    	        sb.append((char) ch);
-    	        ch = r.read();
-    	    }
-	    } catch (UnsupportedEncodingException UEE){
-	        
-	    } catch (IOException ioe)
-	    {	        
-	    }
-	    return sb.toString();
-	}
-	
-	protected boolean isPEM (String key){
-	    if (key!=null &&
-	        key.startsWith(PEM_BEGIN_TOKEN) )
-	    {
-	        return true;
-	    }
-	    return false;
+        String normalizedLocation = null;
 
-	}
+        try {
 
-	@FFDCIgnore({ KeyStoreException.class })
-	protected PublicKey getJwkRemote(String kid, String x5t) throws KeyStoreException, InterruptedException {
-	    Tr.debug(tc, "TTORRES: getJwkRemote", kid, x5t);
-		String jwkUrl = jwkEndpointUrl;
-		if (jwkUrl==null){
-		    jwkUrl = this.keyLocation;
-		}
-		if (jwkUrl == null || !jwkUrl.startsWith("http")) {
-			return null;
-		}
-		PublicKey key = null;
-		try {
-			synchronized (jwkSet) {
-				key = this.getJwkCache(kid, x5t);
-				if (key == null) {
-					key = doJwkRemote(kid, x5t);
-				}
-			}
-		} catch (KeyStoreException e) {
-			throw e;
-		}
-		return key;
-	}
+            final String keyFile;
+            if (location.startsWith("file:")) {
+                URI uri = new URI(location);
+                keyFile = uri.getPath();
+            } else {
+                keyFile = location;
+            }
 
-	@FFDCIgnore({ Exception.class, KeyStoreException.class })
-	protected PublicKey doJwkRemote(String kid, String x5t) throws KeyStoreException {
+            try {
+                final File jwkFile = new File(keyFile);
+                inputStream = (FileInputStream) AccessController.doPrivileged(new PrivilegedExceptionAction<Object>() {
+                    @Override
+                    public Object run() throws Exception {
+                        if (jwkFile.exists()) {
+                            return new FileInputStream(jwkFile);
+                        } else {
+                            return null;
+                        }
+                    }
+                });
+                normalizedLocation = jwkFile.getCanonicalPath();
+            } catch (PrivilegedActionException e1) {
+                URL resourceURL = Thread.currentThread().getContextClassLoader().getResource(location);
+                normalizedLocation = resourceURL.getPath();
+                inputStream = resourceURL.openStream();
+            }
+            if (inputStream == null) {
+                URL resourceURL = Thread.currentThread().getContextClassLoader().getResource(location);
+                normalizedLocation = resourceURL.getPath();
+                inputStream = resourceURL.openStream();
+            }
 
-		String jsonString = null;
-		String jwkUrl = jwkEndpointUrl;
-		if (jwkUrl == null)
-		{
-		    jwkUrl = this.keyLocation;
-		}
+            if (inputStream != null) {
+                synchronized (jwkSet) {
+                    publicKey = getJwkFromJWKSet(normalizedLocation, kid, x5t);
+                    if (publicKey == null) {
+                        keyString = getKeyAsString(inputStream);
+                        parse(keyString, normalizedLocation, jwkSet, sigAlg);
+                        publicKey = getJwkFromJWKSet(normalizedLocation, kid, x5t);
+                    }
+                }
+            }
+        } catch (Exception e2) {
+        }
+        return publicKey;
+    }
 
-		try {
-			// TODO - validate url
-			SSLSocketFactory sslSocketFactory = getSSLSocketFactory(jwkUrl, sslConfigurationName, sslSupport);
-			HttpClient client = createHTTPClient(sslSocketFactory, jwkUrl, hostNameVerificationEnabled);
-			jsonString = getHTTPRequestAsString(client, jwkUrl);
-			boolean bJwk = parseJwk(jsonString, null, jwkSet, sigAlg);
-			if (!bJwk) {
-				// can not get back any JWK from OP
-				// since getJwkLocal will be called later and NO key exception
-				// will be handled in the parent callers
-				// debug here only
-				if (tc.isDebugEnabled()) {
-					Tr.debug(tc, "No JWK can be found through '" + jwkUrl + "'");
-				}
-			}
+    protected PublicKey getJwkLocal(String kid, String x5t, String publicKeyText, String location) {
+        if (publicKeyText == null && location != null) {
+            return getPublicKeyFromFile(location, kid, x5t);
+        }
+ 
+        if (publicKeyText != null) {
+            synchronized (jwkSet) {
+                PublicKey publicKey = getJwkFromJWKSet(publicKeyText, kid, x5t);
+                if (publicKey == null) {
+                    parse(publicKeyText, null, jwkSet, sigAlg);
+                    publicKey = getJwkFromJWKSet(publicKeyText, kid, x5t);
+                }
+                return publicKey;
+            }
+        }
+        return null;
+    }
 
-		} catch (KeyStoreException e) {
-			if (tc.isDebugEnabled()) {
-				Tr.debug(tc, "Fail to retrieve remote key: ", e.getCause());
-			}
-			throw e;
-		} catch (Exception e) {
-			// could be ignored
-			if (tc.isDebugEnabled()) {
-				Tr.debug(tc, "Fail to retrieve remote key: ", e.getCause());
-			}
-		}
+    protected String getKeyAsString(InputStream fis) {
+        StringBuilder sb = new StringBuilder();
+        try {
+            InputStreamReader r = new InputStreamReader(fis, "UTF-8");
+            int ch = r.read();
+            while (ch >= 0) {
+                sb.append((char) ch);
+                ch = r.read();
+            }
+        } catch (UnsupportedEncodingException UEE) {
 
-		return getJwkCache(kid, x5t);
-	}
+        } catch (IOException ioe) {
+        }
+        return sb.toString();
+    }
+
+    protected boolean isPEM(String key) {
+        if (key != null && key.startsWith(PEM_BEGIN_TOKEN)) {
+            return true;
+        }
+        return false;
+
+    }
+
+    @FFDCIgnore({ KeyStoreException.class })
+    protected PublicKey getJwkRemote(String kid, String x5t) throws KeyStoreException, InterruptedException {
+        String jwkUrl = jwkEndpointUrl;
+        if (jwkUrl == null) {
+            jwkUrl = this.keyLocation;
+        }
+        if (jwkUrl == null || !jwkUrl.startsWith("http")) {
+            return null;
+        }
+        PublicKey key = null;
+        try {
+            synchronized (jwkSet) {
+                key = getJwkFromJWKSet(jwkUrl, kid, x5t);
+                if (key == null) {
+                    key = doJwkRemote(kid, x5t);
+                }
+            }
+        } catch (KeyStoreException e) {
+            throw e;
+        }
+        return key;
+    }
+
+    @FFDCIgnore({ Exception.class, KeyStoreException.class })
+    protected PublicKey doJwkRemote(String kid, String x5t) throws KeyStoreException {
+
+        String jsonString = null;
+        String jwkUrl = jwkEndpointUrl;
+        if (jwkUrl == null) {
+            jwkUrl = this.keyLocation;
+        }
+
+        try {
+            // TODO - validate url
+            SSLSocketFactory sslSocketFactory = getSSLSocketFactory(jwkUrl, sslConfigurationName, sslSupport);
+            HttpClient client = createHTTPClient(sslSocketFactory, jwkUrl, hostNameVerificationEnabled);
+            jsonString = getHTTPRequestAsString(client, jwkUrl);
+            boolean bJwk = parse(jsonString, jwkUrl, jwkSet, sigAlg);
+
+            if (!bJwk) {
+                // can not get back any JWK from OP
+                // since getJwkLocal will be called later and NO key exception
+                // will be handled in the parent callers
+                // debug here only
+                if (tc.isDebugEnabled()) {
+                    Tr.debug(tc, "No JWK can be found through '" + jwkUrl + "'");
+                }
+            }
+
+        } catch (KeyStoreException e) {
+            if (tc.isDebugEnabled()) {
+                Tr.debug(tc, "Fail to retrieve remote key: ", e.getCause());
+            }
+            throw e;
+        } catch (Exception e) {
+            // could be ignored
+            if (tc.isDebugEnabled()) {
+                Tr.debug(tc, "Fail to retrieve remote key: ", e.getCause());
+            }
+        }
+
+        return getJwkFromJWKSet(jwkUrl, kid, x5t);
+    }
 
     // separate to be an independent method for unit tests
-    public boolean parseJwk(String keyText, FileInputStream inputStream, JWKSet jwkset, String signatureAlgorithm) {
-        Tr.debug(tc, "TTORRES: parseJwk", keyText, inputStream, jwkset, signatureAlgorithm);
+    //    public boolean parseJwk(String keyText, FileInputStream inputStream, JWKSet jwkset, String signatureAlgorithm) {
+    //        boolean bJwk = false;
+    //
+    //        if (keyText != null) {
+    //            bJwk = parseKeyText(keyText, jwkset, signatureAlgorithm);
+    //        } else if (inputStream != null) {
+    //            String keyAsString = getKeyAsString(inputStream);
+    //            bJwk = parseKeyText(keyAsString, jwkset, signatureAlgorithm);
+    //        }
+    //
+    //        return bJwk;
+    //    }
+
+    public boolean parse(String keyText, String location, JWKSet jwkset, String signatureAlgorithm) {
         boolean bJwk = false;
 
         if (keyText != null) {
-            bJwk = parseKeyText(keyText, jwkset, signatureAlgorithm);
-        } else if (inputStream != null) {
-            String keyAsString = getKeyAsString(inputStream);
-            bJwk = parseKeyText(keyAsString, jwkset, signatureAlgorithm);
+            bJwk = parseKeyText(keyText, location, jwkset, signatureAlgorithm);
         }
 
         return bJwk;
     }
-	
-    protected boolean parseKeyText(String keyText, JWKSet jwkset, String signatureAlgorithm) {
+
+    protected boolean parseKeyText(String keyText, String location, JWKSet jwkset, String signatureAlgorithm) {
         Set<JWK> jwks = new HashSet<JWK>();
         JWK jwk = null;
-        boolean isPEM = isPEM(keyText);
+
         if (isPEM(keyText) && "RS256".equals(signatureAlgorithm)) {
             jwk = parsePEMFormat(keyText, signatureAlgorithm);
         } else {
             JSONObject jsonObject = parseJsonObject(keyText);
-            jwk = parseJwkFormat(jsonObject, signatureAlgorithm);
-            if (jwk == null && jsonObject.containsKey(JWKS)) {
-                jwks.addAll(parseJwksFormat(jsonObject, signatureAlgorithm));
+            if (jsonObject != null) {
+                jwk = parseJwkFormat(jsonObject, signatureAlgorithm);
+                if (jwk == null && jsonObject.containsKey(JWKS)) {
+                    jwks.addAll(parseJwksFormat(jsonObject, signatureAlgorithm));
+                }
             }
         }
-        
+
         if (jwk != null) {
             jwks.add(jwk);
         }
-        
+
         for (JWK aJwk : jwks) {
-            jwkSet.add(aJwk, isPEM);
+            if (location != null) {
+                jwkSet.add(location, aJwk);
+            } else {
+                jwkSet.add(keyText, aJwk);
+            }
         }
 
         return !jwks.isEmpty();
@@ -455,209 +483,209 @@ public class JwKRetriever {
         return jwks;
     }
 
-	@FFDCIgnore(Exception.class)
-	JSONObject parseJsonObject(String jsonString) {
-		JSONObject jsonObject = null;
-		try {
-		    if (!jsonString.startsWith(JSON_START)){ //convert Base64 encoded String to JSON string		       
-		       // jsonString=new String (Base64.getDecoder().decode(jsonString), "UTF-8");
-		        jsonString=new String (Base64.decodeBase64(jsonString), "UTF-8");
-		    }
-			jsonObject = JSONObject.parse(jsonString);
-		} catch (Exception e) {
-			if (tc.isDebugEnabled()) {
-				Tr.debug(tc, "Caught exception parsing JSON string [" + jsonString + "]: " + e.getMessage());
-			}
-		}
-		return jsonObject;
-	}
+    @FFDCIgnore(Exception.class)
+    JSONObject parseJsonObject(String jsonString) {
+        JSONObject jsonObject = null;
+        try {
+            if (!jsonString.startsWith(JSON_START)) { //convert Base64 encoded String to JSON string               
+                // jsonString=new String (Base64.getDecoder().decode(jsonString), "UTF-8");
+                jsonString = new String(Base64.decodeBase64(jsonString), "UTF-8");
+            }
+            jsonObject = JSONObject.parse(jsonString);
+        } catch (Exception e) {
+            if (tc.isDebugEnabled()) {
+                Tr.debug(tc, "Caught exception parsing JSON string [" + jsonString + "]: " + e.getMessage());
+            }
+        }
+        return jsonObject;
+    }
 
-	@FFDCIgnore(Exception.class)
-	JSONObject parseJsonObject(InputStream is) {
-		JSONObject jsonObject = null;
-		try {
-			jsonObject = JSONObject.parse(is);
-		} catch (Exception e) {
-			if (tc.isDebugEnabled()) {
-				Tr.debug(tc, "Caught exception parsing input stream [" + is.toString() + "]: " + e.getMessage());
-			}
-		}
-		return jsonObject;
-	}
+    @FFDCIgnore(Exception.class)
+    JSONObject parseJsonObject(InputStream is) {
+        JSONObject jsonObject = null;
+        try {
+            jsonObject = JSONObject.parse(is);
+        } catch (Exception e) {
+            if (tc.isDebugEnabled()) {
+                Tr.debug(tc, "Caught exception parsing input stream [" + is.toString() + "]: " + e.getMessage());
+            }
+        }
+        return jsonObject;
+    }
 
-	@FFDCIgnore(Exception.class)
-	JSONArray parseJsonArray(String jsonString) {
-		JSONArray jsonArray = null;
-		try {
-			jsonArray = JSONArray.parse(jsonString);
-		} catch (Exception e) {
-			if (tc.isDebugEnabled()) {
-				Tr.debug(tc, "Caught exception parsing JSON string [" + jsonString + "]: " + e.getMessage());
-			}
-		}
-		return jsonArray;
-	}
+    @FFDCIgnore(Exception.class)
+    JSONArray parseJsonArray(String jsonString) {
+        JSONArray jsonArray = null;
+        try {
+            jsonArray = JSONArray.parse(jsonString);
+        } catch (Exception e) {
+            if (tc.isDebugEnabled()) {
+                Tr.debug(tc, "Caught exception parsing JSON string [" + jsonString + "]: " + e.getMessage());
+            }
+        }
+        return jsonArray;
+    }
 
-	boolean jsonObjectContainsKtyForValidJwk(JSONObject entry, JWKSet jwkset, String signatureAlgorithm) {
-		if (entry == null) {
-			return false;
-		}
+    boolean jsonObjectContainsKtyForValidJwk(JSONObject entry, JWKSet jwkset, String signatureAlgorithm) {
+        if (entry == null) {
+            return false;
+        }
 
-		JWK jwk = null;
-		String kty = (String) entry.get("kty");
-		if (kty == null) {
-			if (tc.isDebugEnabled()) {
-				Tr.debug(tc, "JSON object is missing 'kty' entry");
-			}
-			return false;
-		}
+        JWK jwk = null;
+        String kty = (String) entry.get("kty");
+        if (kty == null) {
+            if (tc.isDebugEnabled()) {
+                Tr.debug(tc, "JSON object is missing 'kty' entry");
+            }
+            return false;
+        }
 
-		jwk = createJwkBasedOnKty(kty, entry, signatureAlgorithm);
-		if (jwk == null) {
-			return false;
-		}
+        jwk = createJwkBasedOnKty(kty, entry, signatureAlgorithm);
+        if (jwk == null) {
+            return false;
+        }
 
-		if (tc.isDebugEnabled()) {
-			Tr.debug(tc, "Parsing JWK and adding it to JWK set");
-		}
-		jwk.parse();
-		jwkset.addJWK(jwk);
-		if (tc.isDebugEnabled()) {
-			Tr.debug(tc, "add remote key for keyid: ", jwk.getKeyID());
-		}
-		return true;
-	}
+        if (tc.isDebugEnabled()) {
+            Tr.debug(tc, "Parsing JWK and adding it to JWK set");
+        }
+        jwk.parse();
+        jwkset.addJWK(jwk);
+        if (tc.isDebugEnabled()) {
+            Tr.debug(tc, "add remote key for keyid: ", jwk.getKeyID());
+        }
+        return true;
+    }
 
-	JWK createJwkBasedOnKty(String kty, JSONObject keyEntry, String signatureAlgorithm) {
-		JWK jwk = null;
-		if (tc.isDebugEnabled()) {
-			Tr.debug(tc, "kty of JWK is '" + kty + "'");
-		}
-		if (JwkConstants.RSA.equalsIgnoreCase(kty)) {
-			jwk = getRsaJwk(keyEntry);
-		} else if (JwkConstants.EC.equalsIgnoreCase(kty)) {
-			jwk = getEllipticCurveJwk(keyEntry, signatureAlgorithm);
-		}
-		return jwk;
-	}
+    JWK createJwkBasedOnKty(String kty, JSONObject keyEntry, String signatureAlgorithm) {
+        JWK jwk = null;
+        if (tc.isDebugEnabled()) {
+            Tr.debug(tc, "kty of JWK is '" + kty + "'");
+        }
+        if (JwkConstants.RSA.equalsIgnoreCase(kty)) {
+            jwk = getRsaJwk(keyEntry);
+        } else if (JwkConstants.EC.equalsIgnoreCase(kty)) {
+            jwk = getEllipticCurveJwk(keyEntry, signatureAlgorithm);
+        }
+        return jwk;
+    }
 
-	JWK getRsaJwk(JSONObject thing) {
-		// interop: Azure does not emit the sig.alg attribute, so do not check
-		// for it.
-		// if (signatureAlgorithm.startsWith("RS")) {// RS256, RS384, RS512
-		return Jose4jRsaJWK.getInstance(thing);
-	}
+    JWK getRsaJwk(JSONObject thing) {
+        // interop: Azure does not emit the sig.alg attribute, so do not check
+        // for it.
+        // if (signatureAlgorithm.startsWith("RS")) {// RS256, RS384, RS512
+        return Jose4jRsaJWK.getInstance(thing);
+    }
 
-	JWK getEllipticCurveJwk(JSONObject thing, String signatureAlgorithm) {
-		// let get the map<String, Object> from keyObject
-		if (signatureAlgorithm.startsWith("ES")) { // ES256, ES384, ES512
-			return Jose4jEllipticCurveJWK.getInstance(thing); // if implemented
-																// ES256
-		}
-		return null;
-	}
+    JWK getEllipticCurveJwk(JSONObject thing, String signatureAlgorithm) {
+        // let get the map<String, Object> from keyObject
+        if (signatureAlgorithm.startsWith("ES")) { // ES256, ES384, ES512
+            return Jose4jEllipticCurveJWK.getInstance(thing); // if implemented
+                                                              // ES256
+        }
+        return null;
+    }
 
-	protected JSSEHelper getJSSEHelper(SSLSupport sslSupport) throws SSLException {
-		if (sslSupport != null) {
-			return sslSupport.getJSSEHelper();
-		}
-		return null;
-	}
+    protected JSSEHelper getJSSEHelper(SSLSupport sslSupport) throws SSLException {
+        if (sslSupport != null) {
+            return sslSupport.getJSSEHelper();
+        }
+        return null;
+    }
 
-	protected SSLSocketFactory getSSLSocketFactory(String requestUrl, String sslConfigurationName,
-			SSLSupport sslSupport) throws SSLException {
-		SSLSocketFactory sslSocketFactory = null;
+    protected SSLSocketFactory getSSLSocketFactory(String requestUrl, String sslConfigurationName,
+            SSLSupport sslSupport) throws SSLException {
+        SSLSocketFactory sslSocketFactory = null;
 
-		try {
-			sslSocketFactory = sslSupport.getSSLSocketFactory(sslConfigurationName);
-		} catch (javax.net.ssl.SSLException e) {
-			throw new SSLException(e.getMessage());
-		}
-		if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
-			Tr.debug(tc, "sslSocketFactory (" + ") get: " + sslSocketFactory);
-		}
+        try {
+            sslSocketFactory = sslSupport.getSSLSocketFactory(sslConfigurationName);
+        } catch (javax.net.ssl.SSLException e) {
+            throw new SSLException(e.getMessage());
+        }
+        if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled()) {
+            Tr.debug(tc, "sslSocketFactory (" + ") get: " + sslSocketFactory);
+        }
 
-		if (sslSocketFactory == null) {
-			if (requestUrl != null && requestUrl.startsWith("https")) {
-				throw new SSLException(Tr.formatMessage(tc, "JWT_HTTPS_WITH_SSLCONTEXT_NULL",
-						new Object[] { "Null ssl socket factory", configId }));
-			}
-		}
-		return sslSocketFactory;
-	}
+        if (sslSocketFactory == null) {
+            if (requestUrl != null && requestUrl.startsWith("https")) {
+                throw new SSLException(Tr.formatMessage(tc, "JWT_HTTPS_WITH_SSLCONTEXT_NULL",
+                        new Object[] { "Null ssl socket factory", configId }));
+            }
+        }
+        return sslSocketFactory;
+    }
 
-	@FFDCIgnore({ KeyStoreException.class })
-	protected String getHTTPRequestAsString(HttpClient httpClient, String url) throws Exception {
+    @FFDCIgnore({ KeyStoreException.class })
+    protected String getHTTPRequestAsString(HttpClient httpClient, String url) throws Exception {
 
-		String json = null;
-		try {
-			HttpGet request = new HttpGet(url);
-			request.addHeader("content-type", "application/json");
-			HttpResponse result = null;
-			try {
-				result = httpClient.execute(request);
-			} catch (IOException ioex) {
-				logCWWKS6049E(url, 0, "IOException: " + ioex.getMessage() + " " + ioex.getCause());
-				throw ioex;
-			}
-			StatusLine statusLine = result.getStatusLine();
-			int iStatusCode = statusLine.getStatusCode();
-			if (iStatusCode == 200) {
-				json = EntityUtils.toString(result.getEntity(), "UTF-8");
-				if (tc.isDebugEnabled()) {
-					Tr.debug(tc, "Response: ", json);
-				}
-				if (json == null || json.isEmpty()) { // NO JWK returned
-					throw new Exception(logCWWKS6049E(url, iStatusCode, json));
-				}
-			} else {
-				String errMsg = EntityUtils.toString(result.getEntity(), "UTF-8");
-				// error in getting JWK
-				if (tc.isDebugEnabled()) {
-					Tr.debug(tc, "status:" + iStatusCode + " errorMsg:" + errMsg);
-				}
-				throw new Exception(logCWWKS6049E(url, iStatusCode, errMsg));
-			}
-		} catch (KeyStoreException e) {
-			throw e;
-		}
+        String json = null;
+        try {
+            HttpGet request = new HttpGet(url);
+            request.addHeader("content-type", "application/json");
+            HttpResponse result = null;
+            try {
+                result = httpClient.execute(request);
+            } catch (IOException ioex) {
+                logCWWKS6049E(url, 0, "IOException: " + ioex.getMessage() + " " + ioex.getCause());
+                throw ioex;
+            }
+            StatusLine statusLine = result.getStatusLine();
+            int iStatusCode = statusLine.getStatusCode();
+            if (iStatusCode == 200) {
+                json = EntityUtils.toString(result.getEntity(), "UTF-8");
+                if (tc.isDebugEnabled()) {
+                    Tr.debug(tc, "Response: ", json);
+                }
+                if (json == null || json.isEmpty()) { // NO JWK returned
+                    throw new Exception(logCWWKS6049E(url, iStatusCode, json));
+                }
+            } else {
+                String errMsg = EntityUtils.toString(result.getEntity(), "UTF-8");
+                // error in getting JWK
+                if (tc.isDebugEnabled()) {
+                    Tr.debug(tc, "status:" + iStatusCode + " errorMsg:" + errMsg);
+                }
+                throw new Exception(logCWWKS6049E(url, iStatusCode, errMsg));
+            }
+        } catch (KeyStoreException e) {
+            throw e;
+        }
 
-		return json;
-	}
+        return json;
+    }
 
-	private String logCWWKS6049E(String url, int iStatusCode, String errMsg) {
-		// TODO - Message will be added to .nlsprops file under 222394
-		String defaultMessage = "CWWKS6049E: A JSON Web Key (JWK) was not returned from the URL [" + url
-				+ "]. The response status was [" + iStatusCode + "] and the content returned was [" + errMsg + "].";
+    private String logCWWKS6049E(String url, int iStatusCode, String errMsg) {
+        // TODO - Message will be added to .nlsprops file under 222394
+        String defaultMessage = "CWWKS6049E: A JSON Web Key (JWK) was not returned from the URL [" + url
+                + "]. The response status was [" + iStatusCode + "] and the content returned was [" + errMsg + "].";
 
-		String message = TraceNLS.getFormattedMessage(getClass(),
-				"com.ibm.ws.security.jwt.internal.resources.JWTMessages", "JWT_JWK_RETRIEVE_FAILED",
-				new Object[] { url, Integer.valueOf(iStatusCode), errMsg }, defaultMessage);
-		Tr.error(JwKRetriever.tc, message, new Object[0]);
-		return message;
-	}
+        String message = TraceNLS.getFormattedMessage(getClass(),
+                "com.ibm.ws.security.jwt.internal.resources.JWTMessages", "JWT_JWK_RETRIEVE_FAILED",
+                new Object[] { url, Integer.valueOf(iStatusCode), errMsg }, defaultMessage);
+        Tr.error(JwKRetriever.tc, message, new Object[0]);
+        return message;
+    }
 
-	public HttpClient createHTTPClient(SSLSocketFactory sslSocketFactory, String url, boolean isHostnameVerification) {
+    public HttpClient createHTTPClient(SSLSocketFactory sslSocketFactory, String url, boolean isHostnameVerification) {
 
-		HttpClient client = null;
-		boolean addBasicAuthHeader = false;
-		
-		if (jwkClientId != null && jwkClientSecret != null) {
-		    addBasicAuthHeader = true;
-		}
+        HttpClient client = null;
+        boolean addBasicAuthHeader = false;
 
-		BasicCredentialsProvider credentialsProvider = null;		
-		if (addBasicAuthHeader) {
-		    credentialsProvider = createCredentialsProvider();
-		}
-		
+        if (jwkClientId != null && jwkClientSecret != null) {
+            addBasicAuthHeader = true;
+        }
+
+        BasicCredentialsProvider credentialsProvider = null;
+        if (addBasicAuthHeader) {
+            credentialsProvider = createCredentialsProvider();
+        }
+
         client = createHttpClient(url.startsWith("https:"), isHostnameVerification, sslSocketFactory, addBasicAuthHeader, credentialsProvider);
-		return client;
+        return client;
 
-	}
+    }
 
     private HttpClient createHttpClient(boolean isSecure, boolean isHostnameVerification, SSLSocketFactory sslSocketFactory, boolean addBasicAuthHeader, BasicCredentialsProvider credentialsProvider) {
-        
+
         HttpClient client = null;
         if (isSecure) {
             SSLConnectionSocketFactory connectionFactory = null;
@@ -670,7 +698,7 @@ public class JwKRetriever {
                 client = HttpClientBuilder.create().setDefaultCredentialsProvider(credentialsProvider).setSSLSocketFactory(connectionFactory).build();
             } else {
                 client = HttpClientBuilder.create().setSSLSocketFactory(connectionFactory).build();
-            }  
+            }
         } else {
             if (addBasicAuthHeader) {
                 client = HttpClientBuilder.create().setDefaultCredentialsProvider(credentialsProvider).build();
