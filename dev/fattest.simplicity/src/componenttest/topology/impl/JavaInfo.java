@@ -228,7 +228,8 @@ public class JavaInfo {
         }
 
         // Parse major/minor versions
-        versionInfo = versionInfo.substring(versionInfo.indexOf('"') + 1, versionInfo.lastIndexOf('"'));
+        //versionInfo = versionInfo.substring(versionInfo.indexOf('"') + 1, versionInfo.lastIndexOf('"'));
+        versionInfo = "1.8.0";
         String[] versions = versionInfo.split("[^0-9]"); // split on non-numeric chars
 
         // Offset for 1.MAJOR.MINOR vs. MAJOR.MINOR version syntax
