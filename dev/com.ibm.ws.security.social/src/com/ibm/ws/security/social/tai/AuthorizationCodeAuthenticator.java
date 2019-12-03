@@ -163,9 +163,19 @@ public class AuthorizationCodeAuthenticator {
     }
 
     void createUserApiResponseFromAccessToken() throws SocialLoginException {
+    	boolean useCache = socialConfig.getUserApiResponseCacheDurationMsec() >0;
+    	if(useCache) {
+    		userApiResponse = UserApiResponseCache.getCachedResponse(socialConfig, accessToken);
+    		if (userApiResponse != null  && !userApiResponse.isEmpty()) {
+    			return;
+    		}
+    	}
         userApiResponse = userApiUtils.getUserApiResponse(clientUtil, socialConfig, accessToken, sslSocketFactory);
         if (userApiResponse == null || userApiResponse.isEmpty()) {
             throw createExceptionAndLogMessage(null, "USER_API_RESPONSE_NULL_OR_EMPTY", new Object[] { socialConfig.getUniqueId() });
+        }
+        if(useCache) {
+        	UserApiResponseCache.putCachedResponse(socialConfig, accessToken, userApiResponse);
         }
     }
 

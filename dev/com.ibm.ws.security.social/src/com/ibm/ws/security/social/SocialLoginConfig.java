@@ -110,5 +110,7 @@ public interface SocialLoginConfig {
     String getResponseMode();
     
     public boolean getUseSystemPropertiesForHttpClientConnections();
+    
+    public long getUserApiResponseCacheDurationMsec();
 
 }
